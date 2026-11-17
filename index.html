@@ -84,14 +84,14 @@ const CONFIG = {
   REFRESH_SECONDS: 30,
   ONE_BALLOT_PER_ROBLOX_NAME: true,
   // Candidate tags like [F], [A-F], [I] are read from candidate names. Colors can also be set in the Stats tab.
-  PARTIES: {"F":{name:"Federalist",c:"#2f6fdb"},"A-F":{name:"Anti-Federalist",c:"#d23b3b"},"I":{name:"Independent",c:"#8a8f98"}},
+  PARTIES: {"F":{name:"Federalist",c:"#434343"},"A-F":{name:"Anti-Federalist",c:"#85200c"},"I":{name:"Independent",c:"#8a8f98"}},
   // Elections, oldest first. The LAST one is the live one linked to Google. Older ones read a CSV saved in the repo.
   ELECTIONS: [
     {year:1782, csv:"data/1782.csv", stats:"",
      order:["New Lancaster","Brunswick","Newark","Susquehanna","Piedmont","Augusta","Vidalia"]},
     {year:1786, live:true,
      csv:"https://docs.google.com/spreadsheets/d/e/2PACX-1vTsWRdMhOrP6y-SneSTZQC_DhDk-YZfZ5bpO_6xPTVJ4hmszyIpD1TlV9UJ7gK62QNFDHi4k6p1c4mg/pub?output=csv",
-    stats:"https://docs.google.com/spreadsheets/d/e/2PACX-1vTsWRdMhOrP6y-SneSTZQC_DhDk-YZfZ5bpO_6xPTVJ4hmszyIpD1TlV9UJ7gK62QNFDHi4k6p1c4mg/pub?gid=355157912&single=true&output=csv",
+    stats:"PASTE_STATS_TAB_CSV_LINK_HERE",
      // states in the order their sections appear in the form
      order:["New Lancaster","Brunswick","Newark","Susquehanna","Chesapeake","Piedmont","Augusta","Vidalia"],
      // slavery status carried over from earlier elections
@@ -120,6 +120,7 @@ const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",
 const norm=s=>String(s||"").trim().toLowerCase().replace(/\s+/g," ");
 const pcode=c=>{c=String(c||"").toUpperCase().replace(/\s+/g,"").replace(/[–—]/g,"-");return c==="AF"?"A-F":c};
 const pa=a=>{const m=String(a||"").match(/\[([^\]]+)\]/);return m?pcode(m[1]):""};
+const nk=s=>String(s||"").toLowerCase().replace(/[^a-z]/g,"");
 const small=/^(of|the|vs\.?|and|in|to|a)$/;
 const titleCase=t=>t===t.toUpperCase()?t.toLowerCase().split(" ").map((w,i)=>i&&small.test(w)?w:w.charAt(0).toUpperCase()+w.slice(1)).join(" "):t;
 let EL=null,DATA=null,tab="president",sel="",timer=null,paint=null;
@@ -139,10 +140,10 @@ const stateName=v=>[...new Set([...(EL?EL.order:[]),...Object.keys(CONFIG.EV)])]
 const EV=s=>(DATA.stats.ev[s]??CONFIG.EV[s])||0;
 
 function parseStats(text){
-  const S={alias:new Map(),ignore:new Set(),void:new Set(),columns:new Map(),slavery:new Map(),parties:{},ev:{},title:"",status:""};
+  const S={alias:new Map(),ignore:new Set(),void:new Set(),columns:new Map(),slavery:new Map(),parties:{},byName:{},ev:{},title:"",status:""};
   if(text)parseCSV(text).forEach(r=>{
     const a=norm(r[0]),m=(r[1]||"").trim(),v=(r[2]||"").trim(),x=(r[3]||"").trim();
-    if(a==="party"&&m)S.parties[pcode(m)]={name:v||m,c:x||null};
+    if(a==="party"&&m){const e={name:v||m,c:x||null};S.parties[pcode(m)]=e;S.byName[nk(m)]=e;S.byName[nk(v)]=e}
     else if(a==="state"&&m){if(+v)S.ev[m]=+v;if(norm(x) in RANK)S.slavery.set(norm(m),norm(x))}
     else if(a==="slavery"&&m&&norm(v) in RANK)S.slavery.set(norm(m),norm(v));
     else if(a==="alias"&&m&&v)S.alias.set(norm(m),v);
@@ -174,11 +175,12 @@ function tally(rows,col,state){
   return{list:[...m.values()].sort((x,y)=>y.v-x.v),n};
 }
 const winner=t=>t.list.length&&(t.list.length===1||t.list[0].v>t.list[1].v)?t.list[0]:null;
-const mar=t=>t.n?(t.list[0].v-(t.list[1]?t.list[1].v:0))/t.n:0;
-function PARTY(c){if(!c)return null;const a=CONFIG.PARTIES[c]||{name:c,c:null},b=DATA.stats.parties[c]||{};return{name:b.name||a.name,c:b.c||a.c}}
+const mar=t=>t.list.length?t.list[0].v-(t.list[1]?t.list[1].v:0):0;
+const tier=m=>m<3?"Tilt":m<5?"Lean":"Safe";
+function PARTY(c){if(!c)return null;const a=CONFIG.PARTIES[c]||{name:c,c:null},b=DATA.stats.parties[c]||DATA.stats.byName[nk(a.name)]||DATA.stats.byName[nk(c)]||{};return{name:b.name||a.name,c:b.c||a.c}}
 function cc(e){const p=e.p&&PARTY(e.p);if(p&&p.c)return p.c;const k=norm(e.name);if(!DATA.cc.has(k))DATA.cc.set(k,PAL[DATA.cc.size%PAL.length]);return DATA.cc.get(k)}
 const yn=e=>{const k=norm(e.name);return /^(yes|aye|yea)\b/.test(k)?"#1f9d55":/^(no|nay)\b/.test(k)?"#d23b3b":null};
-const shadeF=m=>m<.05?.4:m<.15?.62:m<.3?.82:1;
+const shadeF=m=>m<3?.4:m<5?.7:1;
 function shade(hex,f){const n=parseInt(hex.slice(1),16);return"rgb("+[n>>16,n>>8&255,n&255].map(x=>Math.round(255-(255-x)*f))+")"}
 
 /* ---------- question detection ---------- */
@@ -311,13 +313,13 @@ function raceView(kind){
   const pc=DATA.contests.find(c=>c.cat==="president"&&!c.state);
   const title=kind==="president"?(pc?pc.title:"President"):kind==="senator"?"Senate":"Governors";
   paint=()=>paintMap(n=>{const r=R.find(x=>x.s===stateName(n));if(!r||!r.lead)return null;
-    if(!r.w)return{fill:"#6b7280",lf:"#fff"};const f=shadeF(r.m);return{fill:shade(cc(r.w),f),lf:f>=.82?"#fff":"#14161a"}});
+    if(!r.w)return{fill:"#6b7280",lf:"#fff"};const f=shadeF(r.m);return{fill:shade(cc(r.w),f),lf:f>=.7?"#fff":"#14161a"}});
   const rows=R.slice().sort((a,b)=>b.wt-a.wt||a.s.localeCompare(b.s)).map(r=>
-    `<tr data-s="${esc(r.s)}"><td>${esc(r.s)}</td><td>${r.lead?`<i class="d" style="background:${cc(r.lead)}"></i>${esc(r.lead.name)}${r.w?"":" (tied)"}`:"—"}</td><td>${r.lead&&r.lead.p?esc(PARTY(r.lead.p).name):""}</td><td>${r.lead?(r.m*100).toFixed(1)+"%":""}</td><td>${kind==="president"?r.wt:r.t.n}</td></tr>`).join("");
+    `<tr data-s="${esc(r.s)}"><td>${esc(r.s)}</td><td>${r.lead?`<i class="d" style="background:${cc(r.lead)}"></i>${esc(r.lead.name)}${r.w?"":" (tied)"}`:"—"}</td><td>${r.lead&&r.lead.p?esc(PARTY(r.lead.p).name):""}</td><td>${r.lead?(r.w?"+"+r.m+" · "+tier(r.m):"Tied"):""}</td><td>${kind==="president"?r.wt:r.t.n}</td></tr>`).join("");
   return`<h2>${esc(title)}</h2><div class="evbar">${G.map(x=>`<i style="width:${x.w/tot*100}%;background:${x.c}"></i>`).join("")}<b></b></div>
 <div class="key">${G.map(x=>`<span><i style="background:${x.c}"></i>${esc(x.l)} · ${x.w}${kind==="president"?" EV":""} (${x.n})</span>`).join("")}</div>
 <div class="sub">${dec} of ${tot} ${unit} ${fin?"won":"leading"} · ${maj} for a majority${EL.live&&!fin?" · live":""}</div>
-<div id="mapwrap"><div id="mapbox">${MAP_SVG}</div><div class="side"><div class="key">Margin ${[.02,.1,.2,.4].map(m=>`<span><i style="background:${shade("#444",shadeF(m))}"></i>${["&lt;5","5–15","15–30","30+"][[.02,.1,.2,.4].indexOf(m)]}</span>`).join("")}</div>
+<div id="mapwrap"><div id="mapbox">${MAP_SVG}</div><div class="side"><div class="key">${[[1,"Tilt (1–2 votes)"],[3,"Lean (3–4)"],[5,"Safe (5+)"]].map(([m,t])=>`<span><i style="background:${shade("#444",shadeF(m))}"></i>${t}</span>`).join("")}</div>
 <table class="tbl"><tr><th>State</th><th>Leader</th><th>Party</th><th>Margin</th><th>${kind==="president"?"EV":"Votes"}</th></tr>${rows}</table></div></div>${detail()}`}
 
 function measures(){
@@ -359,7 +361,7 @@ function insights(){
   if(pc)["governor","senator"].forEach(k=>{let n=0,sp=0;rows.forEach(r=>{const c=DATA.contests.find(c=>c.cat===k&&c.state===stateName(r[3]));if(!c)return;const a=pa(r[pc.col]),b=pa(r[c.col]);if(a&&b){n++;if(a!==b)sp++}});
     if(n)ts.push(`<b>${(sp/n*100).toFixed(1)}%</b> of voters chose different parties for President and ${k==="governor"?"Governor":"Senator"} (${n} voters with party tags)`)});
   if(ts.length)h+=`<h2>Ticket splitting</h2>${ts.map(t=>`<div class="sub">${t}</div>`).join("")}`;
-  const cl=[];["president","senator","governor"].forEach(k=>races(k).forEach(r=>{if(r.t.n&&r.lead)cl.push({m:r.m,x:`${r.s} · ${k==="senator"?"Senate":k[0].toUpperCase()+k.slice(1)}: ${r.lead.name}${r.w?` leads by ${(r.m*100).toFixed(1)} pts`:" (tied)"} · ${r.t.n} votes`})}));
+  const cl=[];["president","senator","governor"].forEach(k=>races(k).forEach(r=>{if(r.t.n&&r.lead)cl.push({m:r.m,x:`${r.s} · ${k==="senator"?"Senate":k[0].toUpperCase()+k.slice(1)}: ${r.lead.name}${r.w?` leads by ${r.m} vote${r.m===1?"":"s"}`:" (tied)"} · ${r.t.n} votes`})}));
   if(cl.length)h+=`<h2>Closest races</h2><table class="tbl">${cl.sort((a,b)=>a.m-b.m).slice(0,6).map(c=>`<tr><td>${esc(c.x)}</td></tr>`).join("")}</table>`;
   return h}
 
